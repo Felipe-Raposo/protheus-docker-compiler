@@ -42,7 +42,7 @@ if [[ -d "/patches" ]]; then
 				sleep 0.1
 			done
 		else
-			printf '- Patch %s\t\tAplicando\n' "$name"
+			printf -- '- Patch %s\t\tAplicando\n' "$name"
 		fi
 		wait "$pid"
 		return $?
@@ -58,10 +58,10 @@ if [[ -d "/patches" ]]; then
 		fi
 	}
 
-	shopt -s nullglob
+	shopt -s nullglob nocaseglob
 	for patch in /patches/*.ptm; do
 		patch_name=$(basename "$patch")
-		patch_base="${patch_name%.ptm}"
+		patch_base="${patch_name%.*}"
 		patch_log="${outreport}/${patch_base}.log"
 
 		rm -f "$patch_errors_log"
@@ -88,7 +88,7 @@ if [[ -d "/patches" ]]; then
 		((patch_count++))
 		echo
 	done
-	shopt -u nullglob
+	shopt -u nullglob nocaseglob
 
 	if [[ $patch_count -eq 0 ]]; then
 		echo "Nenhuma patch (.ptm) encontrada em /patches."
