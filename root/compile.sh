@@ -25,25 +25,60 @@ if [[ -d "/patches" ]]; then
 
 	mkdir -p "$outreport" "$applied_dir"
 
+	# Detecta se a saida e interativa (TTY) para decidir animar o spinner.
+	if [[ -t 1 ]]; then interactive=1; else interactive=0; fi
+
+	spinner_frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+
+	# Aguarda o processo em background exibindo o estado "Aplicando".
+	# Em TTY, anima um spinner na mesma linha; caso contrario, imprime uma vez.
+	wait_with_spinner() {
+		local pid="$1" name="$2"
+		local i=0 frame
+		if [[ $interactive -eq 1 ]]; then
+			while kill -0 "$pid" 2>/dev/null; do
+				frame="${spinner_frames[i++ % ${#spinner_frames[@]}]}"
+				printf '\r%s Patch %s\t\tAplicando' "$frame" "$name"
+				sleep 0.1
+			done
+		else
+			printf '- Patch %s\t\tAplicando\n' "$name"
+		fi
+		wait "$pid"
+		return $?
+	}
+
+	# Imprime a linha final do patch (icone, nome, status e tempo).
+	print_result() {
+		local icon="$1" name="$2" status="$3" secs="$4"
+		if [[ $interactive -eq 1 ]]; then
+			printf '\r%s Patch %s\t\t%s - %ss\033[K\n' "$icon" "$name" "$status" "$secs"
+		else
+			printf '%s Patch %s\t\t%s - %ss\n' "$icon" "$name" "$status" "$secs"
+		fi
+	}
+
 	shopt -s nullglob
 	for patch in /patches/*.ptm; do
 		patch_name=$(basename "$patch")
 		patch_base="${patch_name%.ptm}"
 		patch_log="${outreport}/${patch_base}.log"
 
-		echo "Aplicando patch ${patch_name}..."
-
 		rm -f "$patch_errors_log"
-		./appsrvlinux -compile -applypatch -env="P12" -files="$patch" -outreport="$outreport" > "$patch_log" 2>&1
+		patch_start=$SECONDS
+		./appsrvlinux -compile -applypatch -env="P12" -files="$patch" -outreport="$outreport" > "$patch_log" 2>&1 &
+		cmd_pid=$!
+		wait_with_spinner "$cmd_pid" "$patch_base"
 		exit_code=$?
+		elapsed=$((SECONDS - patch_start))
 
 		if [[ $exit_code -eq 0 ]] && [[ ! -s "$patch_errors_log" ]]; then
-			echo "Patch ${patch_name} aplicada com sucesso."
+			print_result "✔" "$patch_base" "Aplicada" "$elapsed"
 			mv "$patch" "${applied_dir}/${patch_name}"
 			mv "$patch_log" "${applied_dir}/${patch_base}.log"
 			((applied_patches++))
 		else
-			echo "****** Erro ao aplicar patch ${patch_name} ******"
+			print_result "✖" "$patch_base" "Falhou" "$elapsed"
 			if [[ -s "$patch_errors_log" ]]; then
 				mv "$patch_errors_log" "${outreport}/${patch_base}_patch_errors.log"
 			fi
